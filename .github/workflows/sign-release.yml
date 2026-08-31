@@ -891,6 +891,13 @@ jobs:
             mv staging-download/macos.tsv attest/macos.tsv
           fi
 
+          # GitHub Release assets normalize spaces in filenames to dots.
+          # Restore the canonical filename expected by the macOS attestation
+          # and the release manifest before moving the staged assets.
+          if [ -f "staging-download/Breeze.Installer.app.zip" ]; then
+            mv               "staging-download/Breeze.Installer.app.zip"               "staging-download/Breeze Installer.app.zip"
+          fi
+
           find staging-download -maxdepth 1 -type f -exec mv {} release-assets/ \;
 
           echo "Release assets:"
