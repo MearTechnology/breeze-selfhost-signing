@@ -136,12 +136,39 @@ jobs:
               ;;
           esac
 
+
+  staging:
+    permissions:
+      contents: write
+    name: Create staging release
+    needs: [validate]
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.create.outputs.tag }}
+    steps:
+      - name: Create temporary draft release
+        id: create
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          TAG="signing-staging-v${VERSION}-run-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --title "Signing staging ${VERSION} - run ${GITHUB_RUN_ID}" \
+            --notes "Temporary staging release used by the signing workflow."
+
   windows:
     permissions:
-      contents: read
+      contents: write
       id-token: write
     name: Sign Windows artifacts
-    needs: [validate]
+    needs: [validate, staging]
     if: inputs.platforms == 'all' || inputs.platforms == 'windows'
     runs-on: windows-latest
     environment: signing
@@ -468,34 +495,33 @@ jobs:
           Set-Content -Path "attest/windows.tsv" -Value $lines -Encoding utf8
           Get-Content "attest/windows.tsv"
 
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: signed-windows
-          path: |
-            dist/breeze-agent-windows-amd64.exe
-            dist/breeze-backup-windows-amd64.exe
-            dist/breeze-watchdog-windows-amd64.exe
-            dist/breeze-user-helper-windows-amd64.exe
-            dist/breeze-agent.msi
-          # Default is `warn`: a path that stops matching would upload a short
-          # asset set with a green job, and publish would ship the gap.
-          if-no-files-found: error
-          retention-days: 7
+      - name: Upload Windows outputs to staging release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAGING_TAG: ${{ needs.staging.outputs.tag }}
+        run: |
+          $ErrorActionPreference = "Stop"
 
-      - name: Upload Windows signing attestation
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: attestation-windows
-          path: attest/windows.tsv
-          if-no-files-found: error
-          retention-days: 7
+          gh release upload $env:STAGING_TAG `
+            "dist/breeze-agent-windows-amd64.exe" `
+            "dist/breeze-backup-windows-amd64.exe" `
+            "dist/breeze-watchdog-windows-amd64.exe" `
+            "dist/breeze-user-helper-windows-amd64.exe" `
+            "dist/breeze-agent.msi" `
+            "attest/windows.tsv" `
+            --repo $env:GITHUB_REPOSITORY `
+            --clobber
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to upload Windows outputs to staging release"
+          }
 
   macos:
     permissions:
-      contents: read
+      contents: write
     name: Sign macOS artifacts
-    needs: [validate]
+    needs: [validate, staging]
     if: inputs.platforms == 'all' || inputs.platforms == 'macos'
     runs-on: macos-latest
     environment: signing
@@ -807,23 +833,14 @@ jobs:
           done
           cat attest/macos.tsv
 
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: signed-macos
-          path: out/*
-          # Default is `warn`: a path that stops matching would upload a short
-          # asset set with a green job, and publish would ship the gap.
-          if-no-files-found: error
-          retention-days: 7
+      - name: Upload macOS outputs to staging release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAGING_TAG: ${{ needs.staging.outputs.tag }}
+        run: |
+          set -euo pipefail
 
-      - name: Upload macOS signing attestation
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: attestation-macos
-          path: attest/macos.tsv
-          if-no-files-found: error
-          retention-days: 7
+          gh release upload "$STAGING_TAG"             out/*             attest/macos.tsv             --repo "$GITHUB_REPOSITORY"             --clobber
 
       - name: Cleanup keychain
         if: always() && inputs.dry-run == false
@@ -833,10 +850,11 @@ jobs:
     permissions:
       contents: write
     name: Publish signed release
-    needs: [validate, windows, macos]
+    needs: [validate, staging, windows, macos]
     if: >-
       always() && !cancelled()
       && needs.validate.result == 'success'
+      && needs.staging.result == 'success'
       && (needs.windows.result == 'success' || needs.windows.result == 'skipped')
       && (needs.macos.result == 'success' || needs.macos.result == 'skipped')
       && !(needs.windows.result == 'skipped' && needs.macos.result == 'skipped')
@@ -854,33 +872,32 @@ jobs:
         with:
           version: ${{ needs.validate.outputs.version }}
 
-      - name: Download signed Windows artifacts
-        if: needs.windows.result == 'success'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: signed-windows
-          path: release-assets/
+      - name: Download staged signed outputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAGING_TAG: ${{ needs.staging.outputs.tag }}
+        run: |
+          set -euo pipefail
 
-      - name: Download signed macOS artifacts
-        if: needs.macos.result == 'success'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: signed-macos
-          path: release-assets/
+          mkdir -p staging-download release-assets attest
 
-      - name: Download Windows signing attestation
-        if: needs.windows.result == 'success'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: attestation-windows
-          path: attest/
+          gh release download "$STAGING_TAG"             --repo "$GITHUB_REPOSITORY"             --dir staging-download
 
-      - name: Download macOS signing attestation
-        if: needs.macos.result == 'success'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: attestation-macos
-          path: attest/
+          if [ -f staging-download/windows.tsv ]; then
+            mv staging-download/windows.tsv attest/windows.tsv
+          fi
+
+          if [ -f staging-download/macos.tsv ]; then
+            mv staging-download/macos.tsv attest/macos.tsv
+          fi
+
+          find staging-download -maxdepth 1 -type f -exec mv {} release-assets/ \;
+
+          echo "Release assets:"
+          ls -lh release-assets/
+
+          echo "Attestations:"
+          ls -lh attest/
 
       - name: Mirror never-signed official assets (verified)
         env:
@@ -1178,17 +1195,6 @@ jobs:
           print(f"checksums.txt agrees with the signed manifest across {len(signed)} assets")
           PY
 
-      - name: Upload dry-run assets as workflow artifact
-        if: inputs.dry-run == true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          # Named for what it actually is. These binaries are UNSIGNED and the
-          # manifest beside them is signed with a throwaway key.
-          name: dry-run-unsigned-assets
-          path: release-assets/*
-          if-no-files-found: error
-          retention-days: 7
-
       - name: Create release
         if: inputs.dry-run == false
         env:
@@ -1219,6 +1225,15 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "Breeze ${VERSION} (self-signed)" \
             --notes "Breeze ${VERSION} agent packages signed with this organization's certificates. Built from official unsigned artifacts of https://github.com/lanternops/breeze/releases/tag/v${VERSION}, verified against the official Ed25519 release manifest before signing."
+
+      - name: Delete temporary staging release
+        if: success() && inputs.dry-run == false
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAGING_TAG: ${{ needs.staging.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release delete "$STAGING_TAG"             --repo "$GITHUB_REPOSITORY"             --cleanup-tag             --yes
 
       - name: Write instance configuration summary
         env:
