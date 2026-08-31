@@ -1022,9 +1022,8 @@ jobs:
               if line.strip()
           ]
 
-          # Completeness. `actions/upload-artifact` defaults to warning rather
-          # than failing on an empty match, so without this a path that stopped
-          # matching would publish a short asset set behind a green run.
+          # Completeness. A transport/upload bug or a path that stopped matching
+          # must not allow a short asset set to be published behind a green run.
           present = {
               p.name for p in release_dir.iterdir() if p.is_file() and p.name not in excluded
           }
@@ -1253,7 +1252,7 @@ jobs:
             echo "## Point your Breeze instance at this release"
             echo ""
             if [ "$DRY_RUN" = "true" ]; then
-              echo "> **Dry run** — nothing was published. The binaries produced are **unsigned** and the key below is a throwaway generated in this run: your real manifest key was never loaded, so the \`dry-run-unsigned-assets\` artifact cannot be used as a release. Real runs print your real key here."
+              echo "> **Dry run** — no public/canonical release was published. The binaries produced are **unsigned** and the key below is a throwaway generated in this run: your real manifest key was never loaded. The temporary draft staging release is for workflow transport/debugging only and must not be used as a production release. Real runs print your real key here."
               echo ""
             fi
             echo '```bash'
