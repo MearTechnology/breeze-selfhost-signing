@@ -1239,7 +1239,40 @@ jobs:
           STAGING_TAG: ${{ needs.staging.outputs.tag }}
         run: |
           set -euo pipefail
-          gh release delete "$STAGING_TAG"             --repo "$GITHUB_REPOSITORY"             --cleanup-tag             --yes
+
+          # Delete the temporary draft release first. Do not use --cleanup-tag
+          # here because GitHub may already have removed the underlying ref,
+          # which can otherwise return HTTP 422 and turn a successful publish red.
+          if gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete "$STAGING_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --yes
+          else
+            echo "Staging release $STAGING_TAG is already absent."
+          fi
+
+          # Delete the staging tag only if it still exists. A missing tag is fine.
+          git_ref="tags/${STAGING_TAG}"
+          status="$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/ref/${git_ref}")"
+
+          case "$status" in
+            200)
+              gh api \
+                --method DELETE \
+                "repos/${GITHUB_REPOSITORY}/git/refs/${git_ref}"
+              echo "Deleted staging tag $STAGING_TAG."
+              ;;
+            404)
+              echo "Staging tag $STAGING_TAG is already absent."
+              ;;
+            *)
+              echo "::warning::Could not determine whether staging tag still exists (HTTP ${status}); the canonical release has already been published successfully."
+              ;;
+          esac
 
       - name: Write instance configuration summary
         env:
