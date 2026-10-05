@@ -1066,7 +1066,7 @@ jobs:
                   "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                   "size": path.stat().st_size,
                   "platformTrust": trust,
-                  "edition" : "self-host",
+                  "edition": "self-host",
               })
 
           manifest = {
