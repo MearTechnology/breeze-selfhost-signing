@@ -14,7 +14,15 @@ POLICY="${4:---forbid-signing-input}"
 MANIFEST="${OFFICIAL_MANIFEST_PATH:?OFFICIAL_MANIFEST_PATH not set — run verify-official-release first}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-ENCODED_ASSET="$(node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$ASSET")"
+DOWNLOAD_ASSET="$ASSET"
+
+# GitHub normalises the macOS installer asset filename from spaces to dots.
+# The signed manifest retains the canonical name with spaces.
+if [ "$ASSET" = "Breeze Installer.app.zip" ]; then
+  DOWNLOAD_ASSET="Breeze.Installer.app.zip"
+fi
+
+ENCODED_ASSET="$(node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$DOWNLOAD_ASSET")"
 url="https://github.com/lanternops/breeze/releases/download/v${VERSION}/${ENCODED_ASSET}"
 mkdir -p "$(dirname "$DEST")"
 
