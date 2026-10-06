@@ -14,7 +14,8 @@ POLICY="${4:---forbid-signing-input}"
 MANIFEST="${OFFICIAL_MANIFEST_PATH:?OFFICIAL_MANIFEST_PATH not set — run verify-official-release first}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-url="https://github.com/lanternops/breeze/releases/download/v${VERSION}/${ASSET}"
+ENCODED_ASSET="$(node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$ASSET")"
+url="https://github.com/lanternops/breeze/releases/download/v${VERSION}/${ENCODED_ASSET}"
 mkdir -p "$(dirname "$DEST")"
 
 # Download to a temp path and only move into place once verified, so unverified
