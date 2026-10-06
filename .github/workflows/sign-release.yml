@@ -767,7 +767,7 @@ jobs:
             breeze-watchdog-darwin-arm64
             breeze-agent-darwin-amd64.pkg
             breeze-agent-darwin-arm64.pkg
-            "Breeze.Installer.app.zip"
+            "Breeze Installer.app.zip"
           )
 
           while IFS= read -r name; do
@@ -940,7 +940,7 @@ jobs:
             breeze-watchdog-darwin-arm64
             breeze-desktop-helper-darwin-amd64
             breeze-desktop-helper-darwin-arm64
-            "Breeze.Installer.app.zip"
+            "Breeze Installer.app.zip"
 
             # Viewer
             breeze-viewer-windows.msi
