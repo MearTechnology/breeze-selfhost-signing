@@ -731,7 +731,7 @@ jobs:
           set -euo pipefail
           ditto -c -k --sequesterRsrc --keepParent \
             "build/Breeze Installer.app" \
-            "build/Breeze.Installer.app.zip"
+            "build/Breeze Installer.app.zip"
 
       - name: Collect outputs
         run: |
@@ -743,7 +743,7 @@ jobs:
             done
           done
           cp staging/breeze-agent-darwin-amd64.pkg staging/breeze-agent-darwin-arm64.pkg out/
-          cp "build/Breeze.Installer.app.zip" out/
+          cp "build/Breeze Installer.app.zip" out/
           ls -lh out/
 
       # Runs on dry runs too. Produces the attestation the publish job requires
@@ -896,9 +896,9 @@ jobs:
           # GitHub Release assets normalize spaces in filenames to dots.
           # Restore the canonical filename expected by the macOS attestation
           # and the release manifest before moving the staged assets.
-          #if [ -f "staging-download/Breeze.Installer.app.zip" ]; then
-          #  mv               "staging-download/Breeze.Installer.app.zip"               "staging-download/Breeze.Installer.app.zip"
-          #fi
+          if [ -f "staging-download/Breeze.Installer.app.zip" ]; then
+            mv               "staging-download/Breeze.Installer.app.zip"               "staging-download/Breeze Installer.app.zip"
+          fi
 
           find staging-download -maxdepth 1 -type f -exec mv {} release-assets/ \;
 
@@ -1034,8 +1034,13 @@ jobs:
               )
 
           official = json.loads(Path(os.environ["OFFICIAL_MANIFEST_PATH"]).read_text())
-          official_trust = {
-              a["name"]: a.get("platformTrust") for a in official.get("assets", [])
+          # Keep the complete verified official asset entry, not just platformTrust.
+          # macOS .pkg downloads are fail-closed by Breeze 0.121.0 unless the
+          # manifest also carries the Apple Developer ID Installer publisher
+          # metadata (signingIdentity + signingTeamId). Mirrored assets retain
+          # those claims from the already-verified official manifest.
+          official_assets = {
+              a["name"]: a for a in official.get("assets", [])
           }
           mirrored = [
               line
@@ -1076,19 +1081,47 @@ jobs:
                   if trust == "unsigned-dry-run":
                       trust = "none"
               else:
-                  trust = official_trust.get(name)
+                  official_entry = official_assets.get(name)
+                  if official_entry is None:
+                      raise SystemExit(
+                          f"mirrored asset {name} is absent from the verified official manifest"
+                      )
+                  trust = official_entry.get("platformTrust")
                   if trust is None:
                       raise SystemExit(
                           f"mirrored asset {name} has no platformTrust in the verified "
                           "official manifest — refusing to invent one"
                       )
-              assets.append({
+
+              entry = {
                   "name": name,
                   "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                   "size": path.stat().st_size,
                   "platformTrust": trust,
                   "edition": "self-host",
-              })
+              }
+
+              # Preserve Apple signing publisher metadata for official macOS
+              # assets mirrored byte-for-byte. Breeze's macOS package download
+              # path validates these fields in addition to platformTrust.
+              if name not in attested:
+                  official_entry = official_assets[name]
+                  signing_identity = official_entry.get("signingIdentity")
+                  signing_team_id = official_entry.get("signingTeamId")
+
+                  # A half-present publisher claim is malformed; fail here rather
+                  # than publish a manifest the Breeze API will reject later.
+                  if (signing_identity is None) != (signing_team_id is None):
+                      raise SystemExit(
+                          f"mirrored asset {name} has incomplete macOS publisher metadata "
+                          "in the verified official manifest"
+                      )
+
+                  if signing_identity is not None:
+                      entry["signingIdentity"] = signing_identity
+                      entry["signingTeamId"] = signing_team_id
+
+              assets.append(entry)
 
           manifest = {
               "schemaVersion": 1,
