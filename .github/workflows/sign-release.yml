@@ -731,7 +731,7 @@ jobs:
           set -euo pipefail
           ditto -c -k --sequesterRsrc --keepParent \
             "build/Breeze Installer.app" \
-            "build/Breeze Installer.app.zip"
+            "build/Breeze.Installer.app.zip"
 
       - name: Collect outputs
         run: |
@@ -743,7 +743,7 @@ jobs:
             done
           done
           cp staging/breeze-agent-darwin-amd64.pkg staging/breeze-agent-darwin-arm64.pkg out/
-          cp "build/Breeze Installer.app.zip" out/
+          cp "build/Breeze.Installer.app.zip" out/
           ls -lh out/
 
       # Runs on dry runs too. Produces the attestation the publish job requires
@@ -767,7 +767,7 @@ jobs:
             breeze-watchdog-darwin-arm64
             breeze-agent-darwin-amd64.pkg
             breeze-agent-darwin-arm64.pkg
-            "Breeze Installer.app.zip"
+            "Breeze.Installer.app.zip"
           )
 
           while IFS= read -r name; do
@@ -897,7 +897,7 @@ jobs:
           # Restore the canonical filename expected by the macOS attestation
           # and the release manifest before moving the staged assets.
           if [ -f "staging-download/Breeze.Installer.app.zip" ]; then
-            mv               "staging-download/Breeze.Installer.app.zip"               "staging-download/Breeze Installer.app.zip"
+            mv               "staging-download/Breeze.Installer.app.zip"               "staging-download/Breeze.Installer.app.zip"
           fi
 
           find staging-download -maxdepth 1 -type f -exec mv {} release-assets/ \;
@@ -940,7 +940,7 @@ jobs:
             breeze-watchdog-darwin-arm64
             breeze-desktop-helper-darwin-amd64
             breeze-desktop-helper-darwin-arm64
-            "Breeze Installer.app.zip"
+            "Breeze.Installer.app.zip"
 
             # Viewer
             breeze-viewer-windows.msi
